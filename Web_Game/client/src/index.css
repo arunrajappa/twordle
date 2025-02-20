@@ -1,3 +1,31 @@
+:root {
+  --background-color: #ffffff;
+  --text-color: #000000;
+  --border-color: #d3d6da;
+  --cell-empty-bg: #ffffff;
+  --keyboard-bg: #d3d6da;
+  --game-info-bg: #f0f0f0;
+  --button-hover: #5c9658;
+  --button-bg: #6aaa64;
+  --correct-color: #6aaa64;
+  --present-color: #c9b458;
+  --absent-color: #787c7e;
+}
+
+[data-theme='dark'] {
+  --background-color: #121213;
+  --text-color: #ffffff;
+  --border-color: #3a3a3c;
+  --cell-empty-bg: #121213;
+  --keyboard-bg: #818384;
+  --game-info-bg: #272729;
+  --button-hover: #538a4f;
+  --button-bg: #538a4f;
+  --correct-color: #538a4f;
+  --present-color: #b59f3b;
+  --absent-color: #3a3a3c;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
@@ -5,7 +33,9 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #ffffff;
+  background-color: var(--background-color);
+  color: var(--text-color);
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 code {

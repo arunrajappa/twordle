@@ -3,6 +3,7 @@ import io from 'socket.io-client';
 import styled from 'styled-components';
 import GameBoard from './components/GameBoard';
 import Keyboard from './components/Keyboard';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
 
 // Initialize socket with proper configuration
 const socket = io('http://localhost:3001', {
@@ -16,18 +17,47 @@ const Container = styled.div`
   max-width: 500px;
   margin: 0 auto;
   padding: 20px;
+  background-color: var(--background-color);
+  color: var(--text-color);
+  min-height: 100vh;
 `;
 
 const Header = styled.header`
   text-align: center;
   margin-bottom: 2rem;
-  border-bottom: 1px solid #d3d6da;
+  border-bottom: 1px solid var(--border-color);
   padding-bottom: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+
+  h1 {
+    margin: 0;
+    color: var(--text-color);
+  }
+`;
+
+const ThemeToggle = styled.button`
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--text-color);
+  padding: 5px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  
+  &:hover {
+    background-color: var(--game-info-bg);
+  }
 `;
 
 const Button = styled.button`
-  background-color: #6aaa64;
-  color: white;
+  background-color: var(--button-bg);
+  color: var(--text-color);
   border: none;
   padding: 10px 20px;
   border-radius: 5px;
@@ -36,17 +66,19 @@ const Button = styled.button`
   margin: 5px;
 
   &:hover {
-    background-color: #5c9658;
+    background-color: var(--button-hover);
   }
 `;
 
 const Input = styled.input`
   padding: 10px;
   font-size: 1rem;
-  border: 2px solid #d3d6da;
+  border: 2px solid var(--border-color);
   border-radius: 5px;
   margin: 5px;
   width: 200px;
+  background-color: var(--cell-empty-bg);
+  color: var(--text-color);
 `;
 
 const Message = styled.div`
@@ -65,28 +97,29 @@ const GameInfo = styled.div`
   margin: 1rem 0;
   padding: 10px;
   border-radius: 5px;
-  background-color: #f0f0f0;
+  background-color: var(--game-info-bg);
+  color: var(--text-color);
 `;
 
 const SecretWord = styled.div`
   font-size: 1.2rem;
   font-weight: bold;
-  color: #6aaa64;
+  color: var(--text-color);
   padding: 10px;
-  border: 2px solid #6aaa64;
+  border: 2px solid var(--border-color);
   border-radius: 5px;
   text-transform: uppercase;
 `;
 
 const OpponentInfo = styled.div`
   text-align: right;
-  color: #666;
+  color: var(--text-color);
 `;
 
 const OpponentGuesses = styled.ol`
   margin: 0;
   padding-left: 20px;
-  color: #666;
+  color: var(--text-color);
   li {
     text-transform: uppercase;
     margin: 2px 0;
@@ -108,7 +141,8 @@ const PlayerBoard = styled.div`
   background-color: ${props => props.active ? '#f8f9fa' : '#fff'};
 `;
 
-function App() {
+function AppContent() {
+  const { isDarkMode, toggleTheme } = useTheme();
   const [gameId, setGameId] = useState('');
   const [gameState, setGameState] = useState({
     status: 'menu',
@@ -272,7 +306,11 @@ function App() {
         );
 
       case 'waiting':
-        return <Message>Waiting for opponent to join...</Message>;
+        return (
+          <div>
+            <Message>Waiting for opponent to join...</Message>
+          </div>
+        );
 
       case 'input_secrets':
         return (
@@ -383,12 +421,22 @@ function App() {
     <Container>
       <Header>
         <h1>Twordle</h1>
-        {gameState.player && <p>You are Player {gameState.player.toUpperCase()}</p>}
+        <ThemeToggle onClick={toggleTheme}>
+          {isDarkMode ? '🌞' : '🌙'}
+        </ThemeToggle>
       </Header>
       {message && <Message>{message}</Message>}
       {error && <Message error>{error}</Message>}
       {renderGameState()}
     </Container>
+  );
+}
+
+function App() {
+  return (
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
   );
 }
 

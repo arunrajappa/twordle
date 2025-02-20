@@ -1,5 +1,6 @@
 import React from 'react';
 import styled from 'styled-components';
+import { useTheme } from '../context/ThemeContext';
 
 const Board = styled.div`
   display: flex;
@@ -17,7 +18,7 @@ const Row = styled.div`
 const Cell = styled.div`
   width: 50px;
   height: 50px;
-  border: 2px solid #d3d6da;
+  border: 2px solid var(--border-color);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -25,15 +26,18 @@ const Cell = styled.div`
   font-weight: bold;
   text-transform: uppercase;
   background-color: ${props => {
-    if (props.feedback === 'green') return '#6aaa64';
-    if (props.feedback === 'yellow') return '#c9b458';
-    if (props.feedback === 'gray') return '#787c7e';
-    return 'white';
+    if (props.feedback === 'green') return 'var(--correct-color)';
+    if (props.feedback === 'yellow') return 'var(--present-color)';
+    if (props.feedback === 'gray') return 'var(--absent-color)';
+    return 'var(--cell-empty-bg)';
   }};
-  color: ${props => props.feedback ? 'white' : 'black'};
+  color: ${props => props.feedback ? 'white' : 'var(--text-color)'};
+  transition: background-color 0.3s ease, color 0.3s ease;
 `;
 
 function GameBoard({ guesses = [], feedbacks = [], currentGuess = '', showCurrentGuess = true }) {
+  const { isDarkMode } = useTheme();
+  
   const rows = Array(6).fill().map((_, i) => {
     if (i < guesses.length) {
       // Show completed guess with feedback

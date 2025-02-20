@@ -10,12 +10,20 @@ const app = express();
 app.use(cors());
 
 // Serve static files from the React client app
-app.use(express.static(path.join(__dirname, 'client/build')));
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, 'client/build')));
+  
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
+  });
+} else {
+  app.use(express.static(path.join(__dirname, 'client/build')));
 
-// Handle any requests that don't match the above
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
-});
+  // Handle any requests that don't match the above
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
+  });
+}
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
