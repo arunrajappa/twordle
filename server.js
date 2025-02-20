@@ -19,13 +19,12 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Serve static files from the React client app
-if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, 'client/build')));
-  
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
-  });
-}
+app.use(express.static(path.join(__dirname, 'client/build')));
+
+// Handle any requests that don't match the above
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
+});
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
@@ -59,8 +58,8 @@ io.on('connection', (socket) => {
       status: 'waiting',
       players: new Map([[socket.id, 'A']]),
       currentTurn: null,
-      guesses: [],
-      feedbacks: [],
+      guesses: new Map(),
+      feedbacks: new Map(),
       secretWords: new Map(),
       opponentGuesses: new Map()
     };
@@ -73,6 +72,16 @@ io.on('connection', (socket) => {
     
     socket.emit('gameCreated', { gameId });
     socket.emit('playerAssigned', { player: 'A' });
+    socket.emit('gameState', {
+      status: 'waiting',
+      player: 'A',
+      currentTurn: null,
+      guesses: [],
+      feedbacks: [],
+      secretWord: '',
+      opponentGuesses: [],
+      yourSecret: false
+    });
     
     // Broadcast updated lobby list to all clients
     io.emit('lobbyGames', Array.from(lobbyGames.values())
@@ -107,15 +116,18 @@ io.on('connection', (socket) => {
     
     socket.emit('playerAssigned', { player: 'B' });
     
-    // Notify both players that the game is starting
-    io.to(gameId).emit('gameState', {
-      status: 'input_secrets',
-      player: 'A',
-      currentTurn: null,
-      guesses: [],
-      feedbacks: [],
-      secretWord: '',
-      opponentGuesses: []
+    // Send game state to both players
+    game.players.forEach((playerLetter, playerId) => {
+      io.to(playerId).emit('gameState', {
+        status: 'input_secrets',
+        player: playerLetter,
+        currentTurn: null,
+        guesses: [],
+        feedbacks: [],
+        secretWord: '',
+        opponentGuesses: [],
+        yourSecret: false
+      });
     });
     
     // Broadcast updated lobby list
@@ -137,6 +149,18 @@ io.on('connection', (socket) => {
     const player = game.players.get(socket.id);
     game.secretWords.set(player, secret.toLowerCase());
     
+    // Send updated game state to the player who submitted their secret
+    socket.emit('gameState', {
+      status: 'input_secrets',
+      player: player,
+      currentTurn: null,
+      guesses: [],
+      feedbacks: [],
+      secretWord: '',
+      opponentGuesses: [],
+      yourSecret: true
+    });
+    
     // If both players have submitted their secrets, start the game
     if (game.secretWords.size === 2) {
       game.status = 'guessing';
@@ -145,16 +169,37 @@ io.on('connection', (socket) => {
       // Send game state to each player with appropriate secret word
       game.players.forEach((playerLetter, playerId) => {
         const opponentLetter = playerLetter === 'A' ? 'B' : 'A';
+        const playerGuesses = game.guesses.get(playerLetter) || [];
+        const playerFeedbacks = game.feedbacks.get(playerLetter) || [];
+        
         io.to(playerId).emit('gameState', {
           status: 'guessing',
           player: playerLetter,
           currentTurn: game.currentTurn,
-          guesses: [],
-          feedbacks: [],
-          secretWord: game.secretWords.get(opponentLetter),
-          opponentGuesses: []
+          guesses: playerGuesses,
+          feedbacks: playerFeedbacks,
+          secretWord: game.secretWords.get(playerLetter), // Send player's own secret word
+          opponentGuesses: Array.from(game.opponentGuesses.get(opponentLetter) || [])
         });
       });
+    } else {
+      // Notify the other player that they're waiting
+      const otherPlayerId = Array.from(game.players.entries())
+        .find(([id, letter]) => id !== socket.id)?.[0];
+      
+      if (otherPlayerId) {
+        const otherPlayerLetter = game.players.get(otherPlayerId);
+        io.to(otherPlayerId).emit('gameState', {
+          status: 'input_secrets',
+          player: otherPlayerLetter,
+          currentTurn: null,
+          guesses: [],
+          feedbacks: [],
+          secretWord: '',
+          opponentGuesses: [],
+          yourSecret: false
+        });
+      }
     }
   });
 
@@ -173,13 +218,13 @@ io.on('connection', (socket) => {
     const feedback = calculateFeedback(guess.toLowerCase(), secretWord);
     
     // Store guess and feedback
-    if (!game.guesses[player]) game.guesses[player] = [];
-    if (!game.feedbacks[player]) game.feedbacks[player] = [];
-    game.guesses[player].push(guess.toLowerCase());
-    game.feedbacks[player].push(feedback);
+    if (!game.guesses.has(player)) game.guesses.set(player, []);
+    if (!game.feedbacks.has(player)) game.feedbacks.set(player, []);
+    game.guesses.get(player).push(guess.toLowerCase());
+    game.feedbacks.get(player).push(feedback);
     
     // Store opponent's guess
-    if (!game.opponentGuesses.get(opponent)) game.opponentGuesses.set(opponent, []);
+    if (!game.opponentGuesses.has(opponent)) game.opponentGuesses.set(opponent, []);
     game.opponentGuesses.get(opponent).push(guess.toLowerCase());
     
     // Check if the game is over
@@ -187,19 +232,22 @@ io.on('connection', (socket) => {
       game.status = 'game_over';
       game.winner = player;
       
-      // Clean up
-      games.delete(gameId);
-      
-      // Notify both players
-      io.to(gameId).emit('gameState', {
-        status: 'game_over',
-        winner: player,
-        secretWord: secretWord,
-        guesses: game.guesses[player],
-        feedbacks: game.feedbacks[player],
-        opponentGuesses: Array.from(game.opponentGuesses.get(opponent))
+      // Send final state to both players
+      game.players.forEach((playerLetter, playerId) => {
+        const opponentLetter = playerLetter === 'A' ? 'B' : 'A';
+        io.to(playerId).emit('gameState', {
+          status: 'game_over',
+          winner: player,
+          player: playerLetter,
+          secretWord: game.secretWords.get(playerLetter), // Send player's own secret word
+          guesses: game.guesses.get(playerLetter) || [],
+          feedbacks: game.feedbacks.get(playerLetter) || [],
+          opponentGuesses: Array.from(game.opponentGuesses.get(opponentLetter) || [])
+        });
       });
       
+      // Clean up
+      games.delete(gameId);
       return;
     }
     
@@ -213,9 +261,9 @@ io.on('connection', (socket) => {
         status: 'guessing',
         player: playerLetter,
         currentTurn: game.currentTurn,
-        guesses: game.guesses[playerLetter] || [],
-        feedbacks: game.feedbacks[playerLetter] || [],
-        secretWord: game.secretWords.get(opponentLetter),
+        guesses: game.guesses.get(playerLetter) || [],
+        feedbacks: game.feedbacks.get(playerLetter) || [],
+        secretWord: game.secretWords.get(playerLetter), // Send player's own secret word
         opponentGuesses: Array.from(game.opponentGuesses.get(opponentLetter) || [])
       });
     });
