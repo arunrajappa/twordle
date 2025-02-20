@@ -4,9 +4,18 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 const wordList = require('./wordlist');
+const path = require('path');
 
 const app = express();
 app.use(cors());
+
+// Serve static files from the React client app
+app.use(express.static(path.join(__dirname, 'client/build')));
+
+// Handle any requests that don't match the above
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
+});
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
@@ -261,7 +270,8 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 5000;
+// Start the server
+const PORT = 3001;
 httpServer.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

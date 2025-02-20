@@ -5,7 +5,7 @@ import GameBoard from './components/GameBoard';
 import Keyboard from './components/Keyboard';
 
 // Initialize socket with proper configuration
-const socket = io('http://localhost:5000', {
+const socket = io('http://localhost:3001', {
   withCredentials: true,
   transports: ['websocket', 'polling'],
   reconnectionAttempts: 5,
