@@ -72,6 +72,11 @@ const Button = styled.button`
   &:hover {
     background-color: var(--button-hover);
   }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 `;
 
 const Input = styled.input`
@@ -105,44 +110,49 @@ const GameInfo = styled.div`
   color: var(--text-color);
 `;
 
-const SecretWord = styled.div`
-  font-size: 1.2rem;
-  font-weight: bold;
-  color: var(--text-color);
-  padding: 10px;
-  border: 2px solid var(--border-color);
-  border-radius: 5px;
-  text-transform: uppercase;
-`;
-
-const OpponentInfo = styled.div`
-  text-align: right;
-  color: var(--text-color);
-`;
-
-const OpponentGuesses = styled.ol`
-  margin: 0;
-  padding-left: 20px;
-  color: var(--text-color);
-  li {
-    text-transform: uppercase;
-    margin: 2px 0;
-  }
-`;
-
 const GameContainer = styled.div`
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  max-width: 600px;
-  margin: 0 auto;
 `;
 
 const PlayerBoard = styled.div`
-  flex: 1;
+  opacity: ${props => props.active ? 1 : 0.7};
+  transition: opacity 0.3s ease;
+`;
+
+const SecretWord = styled.p`
+  font-family: monospace;
+  font-size: 1.2rem;
+  margin: 0.5rem 0;
+`;
+
+const OpponentInfo = styled.div`
+  text-align: right;
+`;
+
+const OpponentGuesses = styled.ul`
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0;
+  font-family: monospace;
+`;
+
+const LobbyGames = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin: 1rem 0;
+`;
+
+const LobbyGame = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   padding: 1rem;
+  background-color: var(--game-info-bg);
   border-radius: 5px;
-  background-color: ${props => props.active ? '#f8f9fa' : '#fff'};
+  border: 1px solid var(--border-color);
 `;
 
 function AppContent() {
@@ -162,6 +172,7 @@ function AppContent() {
   const [currentGuess, setCurrentGuess] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [lobbyGames, setLobbyGames] = useState([]);
 
   // Define handlers using useCallback to prevent unnecessary re-renders
   const handleKeyPress = useCallback((key) => {
@@ -227,11 +238,13 @@ function AppContent() {
   useEffect(() => {
     socket.on('connect', () => {
       console.log('Connected to server');
+      // Request lobby games when connected
+      socket.emit('getLobbyGames');
     });
 
     socket.on('gameCreated', ({ gameId }) => {
       setGameId(gameId);
-      setMessage(`Game created! Share this ID with your opponent: ${gameId}`);
+      setMessage(`Game created! Waiting for opponent to join...`);
     });
 
     socket.on('playerAssigned', ({ player }) => {
@@ -246,9 +259,13 @@ function AppContent() {
       }
     });
 
-    socket.on('error', (error) => {
-      setMessage(error.message);
+    socket.on('error', ({ message }) => {
+      setMessage(message);
       setTimeout(() => setMessage(''), 3000);
+    });
+
+    socket.on('lobbyGames', (games) => {
+      setLobbyGames(games);
     });
 
     return () => {
@@ -257,6 +274,7 @@ function AppContent() {
       socket.off('playerAssigned');
       socket.off('gameState');
       socket.off('error');
+      socket.off('lobbyGames');
     };
   }, []);
 
@@ -268,44 +286,26 @@ function AppContent() {
     socket.emit('joinGame', { gameId });
   };
 
-  const submitSecret = (secret) => {
-    if (!secret) {
-      setMessage('Please enter a word');
-      setTimeout(() => setMessage(''), 3000);
-      return;
-    }
-
-    if (secret.length !== 5) {
-      setMessage('Word must be 5 letters long');
-      setTimeout(() => setMessage(''), 3000);
-      return;
-    }
-
-    if (!/^[a-zA-Z]+$/.test(secret)) {
-      setMessage('Word must contain only letters');
-      setTimeout(() => setMessage(''), 3000);
-      return;
-    }
-
-    socket.emit('submitSecret', { secret });
-    setCurrentGuess('');
-  };
-
+  // Render different views based on game state
   const renderGameState = () => {
     switch (gameState.status) {
       case 'menu':
         return (
           <div>
+            <LobbyGames>
+              <h2>Available Games</h2>
+              {lobbyGames.length === 0 ? (
+                <Message>No games available. Create a new game!</Message>
+              ) : (
+                lobbyGames.map(game => (
+                  <LobbyGame key={game.id}>
+                    <div>Game #{game.id.slice(0, 8)}</div>
+                    <Button onClick={() => joinGame(game.id)}>Join Game</Button>
+                  </LobbyGame>
+                ))
+              )}
+            </LobbyGames>
             <Button onClick={createGame}>Create New Game</Button>
-            <div>
-              <Input
-                type="text"
-                value={gameId}
-                onChange={(e) => setGameId(e.target.value)}
-                placeholder="Enter Game ID"
-              />
-              <Button onClick={() => joinGame(gameId)}>Join Game</Button>
-            </div>
           </div>
         );
 
@@ -348,7 +348,7 @@ function AppContent() {
             
             <GameInfo>
               <div>
-                <p>You are Player {gameState.player.toUpperCase()}</p>
+                <p>You are Player {gameState.player}</p>
                 <SecretWord>Your secret: {gameState.secretWord}</SecretWord>
               </div>
               <OpponentInfo>
@@ -391,7 +391,7 @@ function AppContent() {
 
             <GameInfo>
               <div>
-                <p>You are Player {gameState.player.toUpperCase()}</p>
+                <p>You were Player {gameState.player}</p>
                 <SecretWord>Your secret: {gameState.secretWord}</SecretWord>
               </div>
               <OpponentInfo>
@@ -404,20 +404,25 @@ function AppContent() {
               </OpponentInfo>
             </GameInfo>
 
-            <PlayerBoard>
-              <h3>Your Guesses</h3>
-              <GameBoard 
-                guesses={gameState.guesses} 
-                feedbacks={gameState.feedbacks}
-              />
-            </PlayerBoard>
-
-            <Button onClick={() => window.location.reload()}>Play Again</Button>
+            <Button onClick={() => {
+              setGameState({
+                status: 'menu',
+                player: null,
+                currentTurn: null,
+                guesses: [],
+                feedbacks: [],
+                secretWord: '',
+                winner: null,
+                opponentGuesses: [],
+                yourSecret: null
+              });
+              socket.emit('getLobbyGames');
+            }}>Back to Menu</Button>
           </GameContainer>
         );
 
       default:
-        return null;
+        return <div>Unknown game state</div>;
     }
   };
 
@@ -429,8 +434,7 @@ function AppContent() {
           {isDarkMode ? '🌞' : '🌙'}
         </ThemeToggle>
       </Header>
-      {message && <Message>{message}</Message>}
-      {error && <Message error>{error}</Message>}
+      {message && <Message error={message.includes('error')}>{message}</Message>}
       {renderGameState()}
     </Container>
   );

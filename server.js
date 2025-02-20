@@ -3,7 +3,6 @@ const { createServer } = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
-const wordList = require('./wordlist');
 const path = require('path');
 
 const app = express();
@@ -26,270 +25,274 @@ if (process.env.NODE_ENV === 'production') {
   app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
   });
-} else {
-  app.use(express.static(path.join(__dirname, 'client/build')));
-
-  // Handle any requests that don't match the above
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
-  });
 }
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
-  cors: {
-    origin: "http://localhost:3001",
-    methods: ["GET", "POST"]
-  }
+  cors: corsOptions
 });
 
+// Game state storage
 const games = new Map();
-
-class Game {
-  constructor() {
-    this.players = new Map();
-    this.secrets = new Map();
-    this.guesses = new Map();
-    this.feedbacks = new Map();
-    this.status = "waiting";
-    this.currentTurn = null;
-    this.winner = null;
-  }
-
-  addPlayer(socketId) {
-    if (this.players.size >= 2) return null;
-    
-    const playerNumber = this.players.size === 0 ? "p1" : "p2";
-    this.players.set(socketId, playerNumber);
-    
-    if (this.players.size === 2) {
-      this.status = "input_secrets";
-    }
-    
-    return playerNumber;
-  }
-
-  setSecret(socketId, word) {
-    const playerNumber = this.players.get(socketId);
-    if (!playerNumber) return { error: "Player not found" };
-
-    // Validate word
-    if (!word || typeof word !== 'string' || !wordList.has(word.toLowerCase())) {
-      return { error: "Not a valid English word" };
-    }
-
-    this.secrets.set(playerNumber, word.toLowerCase());
-    
-    if (this.secrets.size === 2) {
-      this.status = "guessing";
-      this.currentTurn = "p1";
-    }
-
-    return this.getPlayerState(socketId);
-  }
-
-  makeGuess(socketId, guess) {
-    const playerNumber = this.players.get(socketId);
-    if (!playerNumber) return { error: "Player not found" };
-    if (this.currentTurn !== playerNumber) return { error: "Not your turn" };
-
-    // Validate word
-    if (!guess || typeof guess !== 'string' || !wordList.has(guess.toLowerCase())) {
-      return { error: "Not a valid English word" };
-    }
-
-    const opponent = playerNumber === "p1" ? "p2" : "p1";
-    const targetWord = this.secrets.get(opponent);
-    
-    if (!targetWord) return { error: "Opponent's word not set" };
-
-    guess = guess.toLowerCase();
-    const feedback = this.calculateFeedback(guess, targetWord);
-    
-    if (!this.guesses.has(playerNumber)) {
-      this.guesses.set(playerNumber, []);
-    }
-    if (!this.feedbacks.has(playerNumber)) {
-      this.feedbacks.set(playerNumber, []);
-    }
-
-    this.guesses.get(playerNumber).push(guess);
-    this.feedbacks.get(playerNumber).push(feedback);
-
-    if (guess === targetWord) {
-      this.status = "game_over";
-      this.winner = playerNumber;
-    } else {
-      this.currentTurn = opponent;
-    }
-
-    return this.getPlayerState(socketId);
-  }
-
-  getPlayerState(socketId) {
-    const playerNumber = this.players.get(socketId);
-    if (!playerNumber) return null;
-
-    const opponent = playerNumber === "p1" ? "p2" : "p1";
-    const opponentGuesses = this.guesses.get(opponent) || [];
-    
-    return {
-      status: this.status,
-      currentTurn: this.currentTurn,
-      yourSecret: this.secrets.has(playerNumber),
-      secretWord: this.secrets.get(playerNumber) || '',
-      guesses: this.guesses.get(playerNumber) || [],
-      feedbacks: this.feedbacks.get(playerNumber) || [],
-      opponentGuesses: opponentGuesses,
-      player: playerNumber,
-      bothSecretsSet: this.secrets.size === 2,
-      winner: this.winner
-    };
-  }
-
-  calculateFeedback(guess, secret) {
-    const feedback = Array(5).fill('gray');
-    const secretChars = [...secret];
-    const guessChars = [...guess];
-
-    // First pass: mark green for correct positions
-    for (let i = 0; i < 5; i++) {
-      if (guessChars[i] === secretChars[i]) {
-        feedback[i] = 'green';
-        secretChars[i] = '#';
-        guessChars[i] = '*';
-      }
-    }
-
-    // Second pass: mark yellow for correct letters in wrong positions
-    for (let i = 0; i < 5; i++) {
-      if (guessChars[i] === '*') continue;
-      for (let j = 0; j < 5; j++) {
-        if (secretChars[j] === guessChars[i]) {
-          feedback[i] = 'yellow';
-          secretChars[j] = '#';
-          break;
-        }
-      }
-    }
-
-    return feedback;
-  }
-
-  notifyPlayers() {
-    for (const [socketId] of this.players) {
-      const state = this.getPlayerState(socketId);
-      io.to(socketId).emit('gameState', state);
-    }
-  }
-
-  removePlayer(socketId) {
-    this.players.delete(socketId);
-    this.status = "game_over";
-    this.notifyPlayers();
-  }
-}
+let lobbyGames = new Map(); // Stores available games in the lobby
 
 io.on('connection', (socket) => {
-  console.log('New client connected');
+  console.log('Client connected:', socket.id);
 
+  // Send available lobby games to the client
+  socket.on('getLobbyGames', () => {
+    const availableGames = Array.from(lobbyGames.values())
+      .filter(game => game.status === 'waiting')
+      .map(game => ({
+        id: game.id,
+        createdAt: game.createdAt
+      }));
+    socket.emit('lobbyGames', availableGames);
+  });
+
+  // Create a new game
   socket.on('createGame', () => {
     const gameId = uuidv4();
-    const game = new Game();
-    games.set(gameId, game);
+    const game = {
+      id: gameId,
+      createdAt: Date.now(),
+      status: 'waiting',
+      players: new Map([[socket.id, 'A']]),
+      currentTurn: null,
+      guesses: [],
+      feedbacks: [],
+      secretWords: new Map(),
+      opponentGuesses: new Map()
+    };
     
+    games.set(gameId, game);
+    lobbyGames.set(gameId, game);
+    
+    socket.join(gameId);
     socket.gameId = gameId;
-    game.addPlayer(socket.id);
-    game.notifyPlayers();
     
     socket.emit('gameCreated', { gameId });
+    socket.emit('playerAssigned', { player: 'A' });
+    
+    // Broadcast updated lobby list to all clients
+    io.emit('lobbyGames', Array.from(lobbyGames.values())
+      .filter(g => g.status === 'waiting')
+      .map(g => ({
+        id: g.id,
+        createdAt: g.createdAt
+      })));
   });
 
+  // Join a game from lobby
   socket.on('joinGame', ({ gameId }) => {
     const game = games.get(gameId);
-    if (!game) {
-      socket.emit('error', { message: 'Game not found' });
-      return;
-    }
-
-    socket.gameId = gameId;
-    const playerNumber = game.addPlayer(socket.id);
     
-    if (!playerNumber) {
-      socket.emit('error', { message: 'Game is full' });
+    if (!game) {
+      socket.emit('error', { message: 'Game not found' });
       return;
     }
-
-    game.notifyPlayers();
-    socket.emit('playerAssigned', { player: playerNumber });
+    
+    if (game.status !== 'waiting') {
+      socket.emit('error', { message: 'Game is already full' });
+      return;
+    }
+    
+    game.players.set(socket.id, 'B');
+    game.status = 'input_secrets';
+    socket.join(gameId);
+    socket.gameId = gameId;
+    
+    // Remove game from lobby since it's now full
+    lobbyGames.delete(gameId);
+    
+    socket.emit('playerAssigned', { player: 'B' });
+    
+    // Notify both players that the game is starting
+    io.to(gameId).emit('gameState', {
+      status: 'input_secrets',
+      player: 'A',
+      currentTurn: null,
+      guesses: [],
+      feedbacks: [],
+      secretWord: '',
+      opponentGuesses: []
+    });
+    
+    // Broadcast updated lobby list
+    io.emit('lobbyGames', Array.from(lobbyGames.values())
+      .filter(g => g.status === 'waiting')
+      .map(g => ({
+        id: g.id,
+        createdAt: g.createdAt
+      })));
   });
 
+  // Handle secret word submission
   socket.on('submitSecret', ({ secret }) => {
-    if (!secret || typeof secret !== 'string') {
-      socket.emit('error', { message: 'Invalid secret word' });
-      return;
-    }
-
-    const game = games.get(socket.gameId);
-    if (!game) {
-      socket.emit('error', { message: 'Game not found' });
-      return;
-    }
-
-    // Validate word against wordlist
-    if (!wordList.has(secret.toLowerCase())) {
-      socket.emit('error', { message: 'Not a valid English word' });
-      return;
-    }
-
-    const result = game.setSecret(socket.id, secret);
-    if (result && result.error) {
-      socket.emit('error', { message: result.error });
-    } else {
-      game.notifyPlayers();
+    const gameId = socket.gameId;
+    const game = games.get(gameId);
+    
+    if (!game) return;
+    
+    const player = game.players.get(socket.id);
+    game.secretWords.set(player, secret.toLowerCase());
+    
+    // If both players have submitted their secrets, start the game
+    if (game.secretWords.size === 2) {
+      game.status = 'guessing';
+      game.currentTurn = 'A';
+      
+      // Send game state to each player with appropriate secret word
+      game.players.forEach((playerLetter, playerId) => {
+        const opponentLetter = playerLetter === 'A' ? 'B' : 'A';
+        io.to(playerId).emit('gameState', {
+          status: 'guessing',
+          player: playerLetter,
+          currentTurn: game.currentTurn,
+          guesses: [],
+          feedbacks: [],
+          secretWord: game.secretWords.get(opponentLetter),
+          opponentGuesses: []
+        });
+      });
     }
   });
 
+  // Handle guess submission
   socket.on('submitGuess', ({ guess }) => {
-    if (!guess || typeof guess !== 'string') {
-      socket.emit('error', { message: 'Invalid guess' });
+    const gameId = socket.gameId;
+    const game = games.get(gameId);
+    
+    if (!game) return;
+    
+    const player = game.players.get(socket.id);
+    const opponent = player === 'A' ? 'B' : 'A';
+    const secretWord = game.secretWords.get(opponent);
+    
+    // Calculate feedback
+    const feedback = calculateFeedback(guess.toLowerCase(), secretWord);
+    
+    // Store guess and feedback
+    if (!game.guesses[player]) game.guesses[player] = [];
+    if (!game.feedbacks[player]) game.feedbacks[player] = [];
+    game.guesses[player].push(guess.toLowerCase());
+    game.feedbacks[player].push(feedback);
+    
+    // Store opponent's guess
+    if (!game.opponentGuesses.get(opponent)) game.opponentGuesses.set(opponent, []);
+    game.opponentGuesses.get(opponent).push(guess.toLowerCase());
+    
+    // Check if the game is over
+    if (guess.toLowerCase() === secretWord) {
+      game.status = 'game_over';
+      game.winner = player;
+      
+      // Clean up
+      games.delete(gameId);
+      
+      // Notify both players
+      io.to(gameId).emit('gameState', {
+        status: 'game_over',
+        winner: player,
+        secretWord: secretWord,
+        guesses: game.guesses[player],
+        feedbacks: game.feedbacks[player],
+        opponentGuesses: Array.from(game.opponentGuesses.get(opponent))
+      });
+      
       return;
     }
-
-    const game = games.get(socket.gameId);
-    if (!game) {
-      socket.emit('error', { message: 'Game not found' });
-      return;
-    }
-
-    // Validate word against wordlist
-    if (!wordList.has(guess.toLowerCase())) {
-      socket.emit('error', { message: 'Not a valid English word' });
-      return;
-    }
-
-    const result = game.makeGuess(socket.id, guess);
-    if (result && result.error) {
-      socket.emit('error', { message: result.error });
-    } else {
-      game.notifyPlayers();
-    }
+    
+    // Switch turns
+    game.currentTurn = opponent;
+    
+    // Send updated game state to both players
+    game.players.forEach((playerLetter, playerId) => {
+      const opponentLetter = playerLetter === 'A' ? 'B' : 'A';
+      io.to(playerId).emit('gameState', {
+        status: 'guessing',
+        player: playerLetter,
+        currentTurn: game.currentTurn,
+        guesses: game.guesses[playerLetter] || [],
+        feedbacks: game.feedbacks[playerLetter] || [],
+        secretWord: game.secretWords.get(opponentLetter),
+        opponentGuesses: Array.from(game.opponentGuesses.get(opponentLetter) || [])
+      });
+    });
   });
 
+  // Handle disconnection
   socket.on('disconnect', () => {
-    console.log('Client disconnected');
-    const game = games.get(socket.gameId);
-    if (game) {
-      game.removePlayer(socket.id);
-      if (game.players.size === 0) {
+    console.log('Client disconnected:', socket.id);
+    
+    // Remove any games this player created in the lobby
+    for (const [gameId, game] of lobbyGames.entries()) {
+      if (game.players.has(socket.id)) {
+        lobbyGames.delete(gameId);
+        games.delete(gameId);
+        // Broadcast updated lobby list
+        io.emit('lobbyGames', Array.from(lobbyGames.values())
+          .filter(g => g.status === 'waiting')
+          .map(g => ({
+            id: g.id,
+            createdAt: g.createdAt
+          })));
+        break;
+      }
+    }
+    
+    // Handle disconnection from active game
+    if (socket.gameId) {
+      const game = games.get(socket.gameId);
+      if (game) {
+        const opponent = Array.from(game.players.entries())
+          .find(([id]) => id !== socket.id)?.[0];
+        
+        if (opponent) {
+          io.to(opponent).emit('gameState', {
+            status: 'game_over',
+            winner: game.players.get(opponent),
+            message: 'Opponent disconnected'
+          });
+        }
+        
         games.delete(socket.gameId);
+        lobbyGames.delete(socket.gameId);
       }
     }
   });
 });
 
-// Start the server
-const PORT = 3001;
+// Helper function to calculate feedback for a guess
+function calculateFeedback(guess, secret) {
+  const feedback = Array(5).fill('gray');
+  const secretChars = secret.split('');
+  const guessChars = guess.split('');
+  
+  // First pass: mark correct positions
+  for (let i = 0; i < 5; i++) {
+    if (guessChars[i] === secretChars[i]) {
+      feedback[i] = 'green';
+      secretChars[i] = null;
+      guessChars[i] = null;
+    }
+  }
+  
+  // Second pass: mark correct letters in wrong positions
+  for (let i = 0; i < 5; i++) {
+    if (guessChars[i] === null) continue;
+    
+    const secretIndex = secretChars.indexOf(guessChars[i]);
+    if (secretIndex !== -1) {
+      feedback[i] = 'yellow';
+      secretChars[secretIndex] = null;
+    }
+  }
+  
+  return feedback;
+}
+
+const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
