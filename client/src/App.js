@@ -6,7 +6,11 @@ import Keyboard from './components/Keyboard';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 
 // Initialize socket with proper configuration
-const socket = io('http://localhost:3001', {
+const SOCKET_SERVER = process.env.NODE_ENV === 'production' 
+  ? window.location.origin
+  : 'http://localhost:3001';
+
+const socket = io(SOCKET_SERVER, {
   withCredentials: true,
   transports: ['websocket', 'polling'],
   reconnectionAttempts: 5,

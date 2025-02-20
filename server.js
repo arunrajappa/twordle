@@ -7,7 +7,17 @@ const wordList = require('./wordlist');
 const path = require('path');
 
 const app = express();
-app.use(cors());
+
+// CORS configuration
+const corsOptions = {
+  origin: process.env.NODE_ENV === 'production' 
+    ? true  // Allow all origins in production
+    : "http://localhost:3000", // Development client URL
+  methods: ["GET", "POST"],
+  credentials: true
+};
+
+app.use(cors(corsOptions));
 
 // Serve static files from the React client app
 if (process.env.NODE_ENV === 'production') {
