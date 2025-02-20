@@ -1,5 +1,6 @@
 // List of valid 5-letter English words
 const wordList = new Set([
+  // Original words
   "about", "above", "abuse", "actor", "acute", "admit", "adopt", "adult", "after", "again",
   "agent", "agree", "ahead", "alarm", "album", "alert", "alike", "alive", "allow", "alone",
   "along", "alter", "among", "anger", "angle", "angry", "apart", "apple", "apply", "arena",
@@ -49,7 +50,35 @@ const wordList = new Set([
   "union", "unity", "until", "upper", "upset", "urban", "usage", "usual", "valid", "value",
   "video", "virus", "visit", "vital", "voice", "waste", "watch", "water", "wheel", "where",
   "which", "while", "white", "whole", "whose", "woman", "women", "world", "worry", "worse",
-  "worst", "worth", "would", "wound", "write", "wrong", "wrote", "yield", "young", "youth"
+  "worst", "worth", "would", "wound", "write", "wrong", "wrote", "yield", "young", "youth",
+  // Adding words with repeated letters
+  "added", "array", "arrow", "happy", "hello", "seeds", "speed", "spell", "spoon", "steel",
+  "sweet", "teeth", "three", "tooth", "wheel", "woods", "books", "boots", "buddy", "carry",
+  "chess", "class", "clock", "coffee", "comma", "daddy", "dress", "droop", "essay", "feet",
+  "floor", "flood", "funny", "grass", "green", "guess", "happy", "inner", "issue", "jelly",
+  "keep", "knee", "letter", "little", "loose", "marry", "meet", "merry", "moon", "moose",
+  "needle", "offer", "penny", "pizza", "queen", "queer", "quick", "quiet", "puppy", "rabbit",
+  "rally", "reed", "room", "root", "scene", "scoop", "seek", "seen", "sell", "sheep",
+  "sleep", "small", "smell", "smile", "smoke", "soon", "speed", "spell", "spill", "staff",
+  "stall", "stamp", "stand", "steel", "steep", "steer", "still", "stock", "sweet", "swell",
+  "teeth", "tell", "terry", "thee", "thick", "tooth", "tree", "wall", "week", "wheel",
+  "wood", "wool", "word", "year", "yell", "zoom", "bless", "chess", "cross", "glass",
+  "grass", "press", "skill", "spell", "staff", "still", "stuff", "tree", "wall", "well",
+  // Common 5-letter words (both with and without repeats)
+  "world", "there", "could", "would", "their", "about", "house", "after", "think", "first",
+  "water", "other", "which", "these", "where", "right", "thing", "three", "years", "black",
+  "small", "night", "white", "below", "price", "music", "field", "value", "paper", "space",
+  "level", "board", "power", "group", "heart", "light", "might", "place", "point", "sound",
+  "today", "young", "whole", "words", "peace", "voice", "comes", "bring", "takes", "works",
+  // More common game words
+  "blink", "brain", "bread", "break", "brick", "bring", "brown", "brush", "build", "built",
+  "bunch", "candy", "carry", "catch", "cause", "chain", "chair", "cheap", "chest", "chief",
+  "child", "clean", "clear", "climb", "clock", "close", "cloud", "color", "count", "cover",
+  "crack", "craft", "crash", "cream", "crime", "cross", "crowd", "crown", "dance", "drink",
+  "drive", "early", "earth", "eight", "empty", "equal", "every", "exact", "exist", "extra",
+  "faith", "false", "fancy", "fault", "fence", "field", "fifth", "fifty", "fight", "final",
+  "flash", "fleet", "float", "floor", "fluid", "focus", "force", "frame", "fresh", "front",
+  "fruit", "glass", "grace", "grade", "grand", "grant", "grass", "great", "green", "grind"
 ]);
 
 module.exports = wordList;
